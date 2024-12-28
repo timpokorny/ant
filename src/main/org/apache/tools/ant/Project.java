@@ -153,6 +153,9 @@ public class Project implements ResourceFactory {
     /** Name of the project's default target. */
     private String defaultTarget;
 
+    /** Set of prefixes that have been used by imported or included files */
+    private Set declaredPrefixes = new HashSet(); // Added by Tim
+
     /** Map from target names to targets (String to Target). */
     private final Hashtable<String, Target> targets = new Hashtable<>();
 
@@ -789,6 +792,30 @@ public class Project implements ResourceFactory {
             description = Description.getDescription(this);
         }
         return description;
+    }
+
+    /**
+     * Gets a set of all the prefixes used in this project by imported or included files
+     *
+     * @since Ant 1.8.4-patched (Added by Tim)
+     */
+    public Set getDeclaredPrefixes() {
+        return this.declaredPrefixes;
+    }
+
+    /**
+     * Add a prefix to the set that we are tracking so that it can be used in resolving
+     * target references later on in Main.resolvePrefixedDependencies().
+     * 
+     * @param targetPrefix The prefix to track
+     * @since Ant 1.8.4-patched
+     */
+    public void addDeclaredPrefix( String targetPrefix ) {
+    	// skip the one that we never use
+    	if( targetPrefix == ProjectHelper.USE_PROJECT_NAME_AS_TARGET_PREFIX )
+    		return;
+
+    	this.declaredPrefixes.add( targetPrefix );
     }
 
     /**

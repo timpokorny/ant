@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -815,6 +816,22 @@ public class Main implements AntMain {
                     }
                 }
 
+                // Added by Tim
+                // Tim - When including files, target names inside the included file are
+                //       automatically prefixed with some name, usually specified in an "as="
+                //       property. All _dependency_ declarations for targets inside the file are
+                //       also prefixed. While this works fine for dependencies inside the same
+                //       file (as they all get the same prefix and so are essentially still
+                //       accessible by the same name), if you want to include targets from
+                //       another file, the dependencies will no longer be resolvable because
+                //       they were prefixed.
+                //       To solve this, we first store any prefixes used when including files in
+                //       a project. Then, here we look for missing dependencies, and if we find
+                //       any, we attempt to resolve them using prefixes from other files that
+                //       we noted down earlier. If we find a match, we rewrite the name of the
+                //       target or dependency.
+                resolvePrefixedDependencies( project );
+
                 project.executeTargets(targets);
             } finally {
                 System.setOut(savedOut);
@@ -843,6 +860,74 @@ public class Main implements AntMain {
                 }
             } else if (error != null) {
                 project.log(error.toString(), Project.MSG_ERR);
+            }
+        }
+    }
+
+    /**
+     * Spin through all targets and check their dependency list to look for missing dependencies
+     * accidentally created by prefixing them on import. This happens when one file mentions
+     * targets from another file. The dependency gets prefixed with the prefix used for the file
+     * that is being imported, so it is no longer findable.
+     * 
+     * For example: Assume we have all Java compilation targets in a file called "java.xml"
+     *              imported with the prefix "java". Secondly, assume we have installer targets
+     *              in a file called "installer.xml" imported with the prefix "installer". If
+     *              a target inside "installer.xml" refers to "java.compile" as a depedency,
+     *              Ant will change this to "installer.java.compile", which won't be resolvable.
+     * 
+     * This task looks for missing dependencies, and if it finds any that can't be resolved, it
+     * goes through and replaces the prefix with those from all imported files in an attempt to
+     * resolve the target under it's "global" name. If we we find a match, we replace the existing
+     * target with the matched name.
+     *
+     * @param project The project we are working in
+     *
+     * @since Ant 1.8.4-patched (Addedy by Tim)
+     */
+    private void resolvePrefixedDependencies(Project project) {
+        Hashtable allTargets = project.getTargets();
+        Enumeration targetsEnumeration = allTargets.elements();
+        while( targetsEnumeration.hasMoreElements() )
+        {
+            // for each of the targets in the project, check all their depdendencies to
+            // ensure they can't be found, attempting to find with prefixes removed if not
+            Target target = (Target)targetsEnumeration.nextElement();
+            Enumeration dependencies = target.getDependencies();
+            while( dependencies.hasMoreElements() ) {
+                String dependency = (String)dependencies.nextElement();
+                if( project.getTargets().containsKey(dependency) )
+                    continue;
+
+                // this target has a dependency that we can't find in the
+                // project, try removing any of the loaded prefixes from it
+                // name to see if we can, and should we be able to, replace
+                // the dependency
+                Set prefixes = project.getDeclaredPrefixes();
+                Iterator iterator = prefixes.iterator();
+                Target resolved = null;
+                while( iterator.hasNext() ) {
+                    String prefix = (String)iterator.next();
+                    // check the start of the target name, don't want to replace middle pieces
+                    // of the target name and find a match! (wouldn't be a prefix then)
+                    if( dependency.startsWith(prefix) == false )
+                        continue;
+
+                    String alternative = dependency.replace( prefix+".", "" );
+                    if( project.getTargets().containsKey(alternative) ) {
+                        // Found it!
+                        resolved = (Target)allTargets.get( alternative );
+                        project.log( "  >> Target ["+target.getName()+"] has dependency ["+
+                                     dependency+"]: NOT FOUND >> REWRITTEN AS ["+resolved+"]",
+                                     Project.MSG_VERBOSE );
+                        break;
+                    }
+                }
+                
+                // replace the target with the proper name if required
+                if( resolved != null ) {
+                    target.replaceDependency( dependency, resolved.getName() );
+                }
             }
         }
     }

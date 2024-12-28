@@ -259,6 +259,20 @@ public class Target implements TaskContainer {
     }
 
     /**
+     * Replaces the identified existing target dependency with the provided new one.
+     * If the given dependency does not exist in the list of dependencies that we have,
+     * no replace shall take place.
+     *
+     * @since Ant 1.8.4-patched (added by Tim)
+     */
+    public void replaceDependency( String previousDependency, String newDependency ) {
+        int index = dependencies.indexOf( previousDependency );
+        if( index >= 0 ) {
+            dependencies.set( index, newDependency );
+        }
+    }
+
+    /**
      * Does this target depend on the named target?
      * @param other the other named target.
      * @return true if the target does depend on the named target

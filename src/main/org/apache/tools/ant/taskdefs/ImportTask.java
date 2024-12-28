@@ -28,6 +28,7 @@ import org.apache.tools.ant.MagicNames;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.ProjectHelper;
 import org.apache.tools.ant.ProjectHelperRepository;
+import org.apache.tools.ant.PropertyHelper;
 import org.apache.tools.ant.Task;
 import org.apache.tools.ant.types.Resource;
 import org.apache.tools.ant.types.ResourceCollection;
@@ -71,6 +72,10 @@ public class ImportTask extends Task {
     private String targetPrefix = ProjectHelper.USE_PROJECT_NAME_AS_TARGET_PREFIX;
     private String prefixSeparator = ".";
     private final Union resources = new Union();
+
+    // added by Tim
+    private String ifCondition = null;
+    private String unlessCondition = null;
 
     public ImportTask() {
         resources.setCache(true);
@@ -119,6 +124,26 @@ public class ImportTask extends Task {
     }
 
     /**
+     * Only import the project if the property identified in this value
+     * evaludates to true.
+     *
+     * @since Ant 1.8.4-patched (Added by Tim)
+     */
+    public void setIf(String property) {
+        ifCondition = property == null ? "" : property;
+    }
+
+    /**
+     * Import the file specified *unless* the value of the identified
+     * property evaluates to false.
+     *
+     * @since Ant 1.8.4-patched (Added by Tim)
+     */
+    public void setUnless(String property) {
+        unlessCondition = property == null ? "" : property;
+    }
+
+    /**
      * The resource to import.
      *
      * @param r ResourceCollection
@@ -130,6 +155,19 @@ public class ImportTask extends Task {
 
     @Override
     public void execute() {
+    	project.addDeclaredPrefix( targetPrefix );
+        // Added by Tim: test the if and allows conditions
+        if (!testIfAllows()) {
+            project.log(this, "Skipped because property '" + project.replaceProperties(ifCondition)
+                    + "' not set.", Project.MSG_VERBOSE);
+            return;
+        }
+        if (!testUnlessAllows()) {
+            project.log(this, "Skipped because property '"
+                    + project.replaceProperties(unlessCondition) + "' set.", Project.MSG_VERBOSE);
+            return;
+        }
+
         if (file == null && resources.isEmpty()) {
             throw new BuildException(
                 "import requires file attribute or at least one nested resource");
@@ -320,6 +358,38 @@ public class ImportTask extends Task {
      */
     protected final boolean isInIncludeMode() {
         return "include".equals(getTaskType());
+    }
+
+    /**
+     * Tests whether or not the "if" condition allows the execution of this target.
+     *
+     * @return whether or not the "if" condition is satisfied. If no
+     *         condition (or an empty condition) has been set,
+     *         <code>true</code> is returned.
+     *
+     * @see #setIf(String)
+     * @since Ant 1.8.4-patched (Added by Tim)
+     */
+    private boolean testIfAllows() {
+        PropertyHelper propertyHelper = PropertyHelper.getPropertyHelper(getProject());
+        Object o = propertyHelper.parseProperties(ifCondition);
+        return propertyHelper.testIfCondition(o);
+    }
+
+    /**
+     * Tests whether or not the "unless" condition allows the execution of this target.
+     *
+     * @return whether or not the "unless" condition is satisfied. If no
+     *         condition (or an empty condition) has been set,
+     *         <code>true</code> is returned.
+     *
+     * @see #setUnless(String)
+     * @since Ant 1.8.4-patched (Added by Tim)
+     */
+    private boolean testUnlessAllows() {
+        PropertyHelper propertyHelper = PropertyHelper.getPropertyHelper(getProject());
+        Object o = propertyHelper.parseProperties(unlessCondition);
+        return propertyHelper.testUnlessCondition(o);
     }
 
     /**
